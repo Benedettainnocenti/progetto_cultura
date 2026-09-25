@@ -1,4 +1,3 @@
-
 import pandas as pd
 import requests
 import time
@@ -14,11 +13,15 @@ FILE_OUTPUT = "/home/benedetta/Scaricati/progetto_cultura/luoghi_geocodificati.c
 
 
 # ============================================
-# 2. CARICO IL FILE
+# 2. TOKEN LOCATIONIQ
 # ============================================
 
-# Se il file di output esiste già, lo utilizzo
-# per riprendere il lavoro da dove era arrivato.
+LOCATIONIQ_TOKEN = "pk.671134535a4fe21206bbff32d29f2bf1"
+
+
+# ============================================
+# 3. CARICO IL FILE
+# ============================================
 
 if os.path.exists(FILE_OUTPUT):
 
@@ -46,7 +49,7 @@ print(f"Righe totali: {len(df)}")
 
 
 # ============================================
-# 3. SESSIONE HTTP
+# 4. SESSIONE HTTP
 # ============================================
 
 session = requests.Session()
@@ -57,14 +60,14 @@ session.headers.update({
 
 
 # ============================================
-# 4. CACHE
+# 5. CACHE
 # ============================================
 
 cache = {}
 
 
 # ============================================
-# 5. FUNZIONE DI GEOCODING
+# 6. FUNZIONE DI GEOCODING
 # ============================================
 
 def reverse_geocode(lat, lon):
@@ -73,22 +76,43 @@ def reverse_geocode(lat, lon):
 
     # Se abbiamo già cercato queste coordinate
     # restituiamo il risultato dalla cache
+
     if key in cache:
+
         return cache[key]
 
-    url = "https://nominatim.openstreetmap.org/reverse"
+
+    # Endpoint europeo di LocationIQ
+
+    url = "https://eu1.locationiq.com/v1/reverse"
+
+
+    # Parametri della richiesta
 
     params = {
+
+        "key": LOCATIONIQ_TOKEN,
+
         "lat": lat,
+
         "lon": lon,
-        "format": "jsonv2",
+
+        "format": "json",
+
         "addressdetails": 1,
+
+        "normalizeaddress": 1,
+
         "zoom": 18,
+
         "accept-language": "it"
     }
 
+
     # Numero massimo di tentativi
+
     max_tentativi = 3
+
 
     for tentativo in range(max_tentativi):
 
@@ -100,6 +124,7 @@ def reverse_geocode(lat, lon):
                 timeout=15
             )
 
+
             # ------------------------------------
             # RATE LIMIT
             # ------------------------------------
@@ -107,8 +132,9 @@ def reverse_geocode(lat, lon):
             if response.status_code == 429:
 
                 print()
-                print("⚠️ Nominatim ha restituito 429.")
-                print("Troppe richieste. Aspetto 60 secondi...")
+                print("⚠️ LocationIQ ha restituito 429.")
+                print("Limite di richieste raggiunto.")
+                print("Aspetto 60 secondi...")
                 print()
 
                 time.sleep(60)
@@ -116,36 +142,78 @@ def reverse_geocode(lat, lon):
                 continue
 
 
+            # ------------------------------------
+            # ALTRI ERRORI HTTP
+            # ------------------------------------
+
             response.raise_for_status()
+
+
+            # ------------------------------------
+            # JSON
+            # ------------------------------------
 
             data = response.json()
 
+
+            # ------------------------------------
+            # DATI DELL'INDIRIZZO
+            # ------------------------------------
+
             address = data.get("address", {})
 
+
+            # ------------------------------------
+            # RISULTATO
+            # ------------------------------------
+
             risultato = {
-                "indirizzo_geocoded": data.get("display_name"),
 
-                "via": address.get("road"),
+                "indirizzo_geocoded":
+                    data.get("display_name"),
 
-                "numero_civico": address.get("house_number"),
+                "via":
+                    address.get("road"),
 
-                "cap_geocoded": address.get("postcode"),
+                "numero_civico":
+                    address.get("house_number"),
 
-                "comune_geocoded": (
-                    address.get("city")
-                    or address.get("town")
-                    or address.get("village")
-                    or address.get("municipality")
-                ),
+                "cap_geocoded":
+                    address.get("postcode"),
 
-                "provincia_geocoded": address.get("county")
+                "comune_geocoded":
+                    (
+                        address.get("city")
+                        or
+                        address.get("town")
+                        or
+                        address.get("village")
+                        or
+                        address.get("municipality")
+                    ),
+
+                "provincia_geocoded":
+                    (
+                        address.get("county")
+                        or
+                        address.get("state")
+                    )
             }
 
-            # Salvo nella cache
+
+            # ------------------------------------
+            # SALVO NELLA CACHE
+            # ------------------------------------
+
             cache[key] = risultato
+
 
             return risultato
 
+
+        # ========================================
+        # ERRORI DI CONNESSIONE
+        # ========================================
 
         except requests.RequestException as e:
 
@@ -153,33 +221,42 @@ def reverse_geocode(lat, lon):
                 f"Errore per {lat}, {lon}: {e}"
             )
 
-            # Se non è l'ultimo tentativo
+
             if tentativo < max_tentativi - 1:
 
                 print("Riprovo tra 10 secondi...")
+
                 time.sleep(10)
 
             else:
 
                 print("Salto questa coordinata.")
 
+
                 return {
+
                     "indirizzo_geocoded": None,
+
                     "via": None,
+
                     "numero_civico": None,
+
                     "cap_geocoded": None,
+
                     "comune_geocoded": None,
+
                     "provincia_geocoded": None
                 }
 
 
 # ============================================
-# 6. CICLO PRINCIPALE
+# 7. CICLO PRINCIPALE
 # ============================================
 
 for i, row in df.iterrows():
 
     lat = row["latitudine"]
+
     lon = row["longitudine"]
 
 
@@ -212,6 +289,7 @@ for i, row in df.iterrows():
 
 
     print()
+
     print(
         f"[{i + 1}/{len(df)}] "
         f"DBUnico: {row['dbunico']}"
@@ -246,18 +324,38 @@ for i, row in df.iterrows():
     )
 
     print(
+        "Via:",
+        risultato["via"]
+    )
+
+    print(
         "Civico:",
         risultato["numero_civico"]
     )
 
+    print(
+        "CAP:",
+        risultato["cap_geocoded"]
+    )
+
+    print(
+        "Comune:",
+        risultato["comune_geocoded"]
+    )
+
+    print(
+        "Provincia:",
+        risultato["provincia_geocoded"]
+    )
+
 
     # ----------------------------------------
-    # Rispetto il limite Nominatim
+    # Pausa tra le richieste
     # ----------------------------------------
 
     if not era_in_cache:
 
-        time.sleep(2)
+        time.sleep(1)
 
 
     # ----------------------------------------
@@ -278,7 +376,7 @@ for i, row in df.iterrows():
 
 
 # ============================================
-# 7. SALVATAGGIO FINALE
+# 8. SALVATAGGIO FINALE
 # ============================================
 
 df.to_csv(
@@ -289,12 +387,13 @@ df.to_csv(
 
 
 # ============================================
-# 8. STATISTICHE
+# 9. STATISTICHE
 # ============================================
 
 print()
+
 print("============================================")
-print("GEOCODING COMPLETATO")
+print("GEOCODING LOCATIONIQ COMPLETATO")
 print("============================================")
 
 print(
@@ -323,3 +422,9 @@ print(
     df["comune_geocoded"].notna().sum()
 )
 
+print(
+    "Province recuperate:",
+    df["provincia_geocoded"].notna().sum()
+)
+print(f"DEBUG: lat={lat}, lon={lon}")
+print(f"URL: {url}")
